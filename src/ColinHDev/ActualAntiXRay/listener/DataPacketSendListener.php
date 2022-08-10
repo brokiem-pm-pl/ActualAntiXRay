@@ -6,6 +6,7 @@ use ColinHDev\ActualAntiXRay\ResourceManager;
 use pocketmine\event\Listener;
 use pocketmine\event\server\DataPacketSendEvent;
 use pocketmine\math\Vector3;
+use pocketmine\network\mcpe\convert\RuntimeBlockMapping;
 use pocketmine\network\mcpe\protocol\UpdateBlockPacket;
 use pocketmine\world\World;
 use function assert;
@@ -39,7 +40,7 @@ class DataPacketSendListener implements Listener {
                 foreach ($applyableTargets as $target) {
                     $world = $target->getPlayer()?->getWorld();
                     assert($world instanceof World);
-                    foreach ($world->createBlockUpdatePackets($vectors) as $updateBlockPacket) {
+                    foreach ($world->createBlockUpdatePackets(RuntimeBlockMapping::getMappingProtocol($target->getProtocolId()), $vectors) as $updateBlockPacket) {
                         $target->addToSendBuffer($updateBlockPacket);
                     }
                 }

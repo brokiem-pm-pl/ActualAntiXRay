@@ -6,8 +6,8 @@ use ColinHDev\ActualAntiXRay\utils\SubChunkExplorer;
 use pocketmine\block\VanillaBlocks;
 use pocketmine\math\Facing;
 use pocketmine\math\Vector3;
+use pocketmine\network\mcpe\CachedChunkPromise;
 use pocketmine\network\mcpe\ChunkRequestTask as PMMPChunkRequestTask;
-use pocketmine\network\mcpe\compression\CompressBatchPromise;
 use pocketmine\network\mcpe\compression\Compressor;
 use pocketmine\network\mcpe\convert\GlobalItemTypeDictionary;
 use pocketmine\network\mcpe\convert\RuntimeBlockMapping;
@@ -21,7 +21,6 @@ use pocketmine\world\format\Chunk;
 use pocketmine\world\format\io\FastChunkSerializer;
 use pocketmine\world\format\SubChunk;
 use pocketmine\world\SimpleChunkManager;
-use pocketmine\world\utils\SubChunkExplorerStatus;
 use pocketmine\world\World;
 use function assert;
 use function is_array;
@@ -42,8 +41,8 @@ class ChunkRequestTask extends PMMPChunkRequestTask {
     private string $adjacentChunks;
     private string $tiles;
 
-    public function __construct(World $world, int $chunkX, int $chunkZ, Chunk $chunk, CompressBatchPromise $promise, Compressor $compressor, ?\Closure $onError = null) {
-        parent::__construct($chunkX, $chunkZ, $chunk, $promise, $compressor, $onError);
+    public function __construct(World $world, int $chunkX, int $chunkZ, Chunk $chunk, int $mappingProtocol, CachedChunkPromise $promise, Compressor $compressor, ?\Closure $onError = null) {
+        parent::__construct($chunkX, $chunkZ, $chunk, $mappingProtocol, $promise, $compressor, $onError);
         if (empty(self::$replaceableBlocks)) {
             self::$replaceableBlocks = [
                 VanillaBlocks::STONE()->getFullId(),
@@ -67,7 +66,7 @@ class ChunkRequestTask extends PMMPChunkRequestTask {
         $this->worldMaxY = $world->getMaxY();
 
         $this->subChunkCount = ChunkSerializer::getSubChunkCount($chunk);
-        $this->tiles = ChunkSerializer::serializeTiles($chunk);
+        $this->tiles = ChunkSerializer::serializeTiles($chunk, $mappingProtocol);
 
         $adjacentChunks = [];
         for ($x = -1; $x <= 1; $x++) {
@@ -167,9 +166,9 @@ class ChunkRequestTask extends PMMPChunkRequestTask {
         $chunk = $manager->getChunk($this->chunkX, $this->chunkZ);
         assert($chunk instanceof Chunk);
         $subCount = ChunkSerializer::getSubChunkCount($chunk) + ChunkSerializer::LOWER_PADDING_SIZE;
-        $encoderContext = new PacketSerializerContext(GlobalItemTypeDictionary::getInstance()->getDictionary());
+        $encoderContext = new PacketSerializerContext(GlobalItemTypeDictionary::getInstance()->getDictionary(GlobalItemTypeDictionary::getDictionaryProtocol($this->mappingProtocol)));
         $payload = ChunkSerializer::serializeFullChunk($chunk, RuntimeBlockMapping::getInstance(), $encoderContext, $this->tiles);
-        $this->setResult($this->compressor->compress(PacketBatch::fromPackets($encoderContext, LevelChunkPacket::create($this->chunkX, $this->chunkZ, $subCount, false, null, $payload))->getBuffer()));
+        $this->setResult($this->compressor->compress(PacketBatch::fromPackets($this->mappingProtocol, $encoderContext, LevelChunkPacket::create($this->chunkX, $this->chunkZ, $subCount, false, null, $payload))->getBuffer()));
     }
 
     private function isBlockReplaceable(SubChunkExplorer $explorer, Vector3 $vector, int $subChunkY) : bool {

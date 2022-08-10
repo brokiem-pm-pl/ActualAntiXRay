@@ -7,9 +7,12 @@ use ColinHDev\ActualAntiXRay\tasks\ChunkRequestTask;
 use pocketmine\block\tile\Spawnable;
 use pocketmine\event\player\PlayerPostChunkSendEvent;
 use pocketmine\network\mcpe\cache\ChunkCache;
+use pocketmine\network\mcpe\CachedChunkPromise;
 use pocketmine\network\mcpe\compression\CompressBatchPromise;
 use pocketmine\network\mcpe\compression\Compressor;
+use pocketmine\network\mcpe\convert\RuntimeBlockMapping;
 use pocketmine\network\mcpe\protocol\BlockActorDataPacket;
+use pocketmine\network\mcpe\protocol\ProtocolInfo;
 use pocketmine\network\mcpe\protocol\types\BlockPosition;
 use pocketmine\player\Player as PMMP_PLAYER;
 use pocketmine\player\UsedChunkStatus;
@@ -17,7 +20,6 @@ use pocketmine\timings\Timings;
 use pocketmine\utils\Utils;
 use pocketmine\world\World;
 use ReflectionProperty;
-use function var_dump;
 
 class Player extends PMMP_PLAYER {
 
@@ -62,7 +64,7 @@ class Player extends PMMP_PLAYER {
             $this->usedChunks[$index] = UsedChunkStatus::REQUESTED_GENERATION();
             $this->activeChunkGenerationRequests[$index] = true;
             unset($this->loadQueue[$index]);
-            $this->getWorld()->registerChunkLoader($this->chunkLoader, $X, $Z, true);
+            $this->getWorld()->registerChunkLoader($this->chunkLoader, $X, $Z);
             $this->getWorld()->registerChunkListener($this, $X, $Z);
 
             $this->getWorld()->requestChunkPopulation($X, $Z, $this->chunkLoader)->onCompletion(
@@ -111,7 +113,7 @@ class Player extends PMMP_PLAYER {
         Utils::validateCallableSignature(function() : void{}, $onCompletion);
 
         $world = $this->getLocation()->getWorld();
-        $this->request(ChunkCache::getInstance($world, $this->getNetworkSession()->getCompressor()), $chunkX, $chunkZ)->onResolve(
+        $this->request(ChunkCache::getInstance($world, $this->getNetworkSession()->getCompressor()), $chunkX, $chunkZ, $this->getNetworkSession()->getProtocolId())->onResolve(
 
         //this callback may be called synchronously or asynchronously, depending on whether the promise is resolved yet
             function(CompressBatchPromise $promise) use ($world, $onCompletion, $chunkX, $chunkZ) : void{
@@ -160,9 +162,9 @@ class Player extends PMMP_PLAYER {
     /**
      * Requests asynchronous preparation of the chunk at the given coordinates.
      *
-     * @return CompressBatchPromise a promise of resolution which will contain a compressed chunk packet.
+     * @return CachedChunkPromise a promise of resolution which will contain a compressed chunk packet.
      */
-    public function request(ChunkCache $chunkCache, int $chunkX, int $chunkZ) : CompressBatchPromise{
+    public function request(ChunkCache $chunkCache, int $chunkX, int $chunkZ, int $protocolId = ProtocolInfo::CURRENT_PROTOCOL) : CachedChunkPromise{
         $property = new ReflectionProperty(ChunkCache::class, "world");
         $property->setAccessible(true);
         /** @var World $world */
@@ -180,15 +182,16 @@ class Player extends PMMP_PLAYER {
         /** @var CompressBatchPromise[] $caches */
         $caches = $cacheProperty->getValue($chunkCache);
 
-        if(isset($caches[$chunkHash])){
+        $mappingProtocol = RuntimeBlockMapping::getMappingProtocol($protocolId);
 
+        if(isset($caches[$chunkHash][$mappingProtocol])){
             $property = new ReflectionProperty(ChunkCache::class, "hits");
             $property->setAccessible(true);
             /** @var int $hits */
             $hits = $property->getValue($chunkCache);
             $property->setValue($chunkCache, $hits + 1);
 
-            return $caches[$chunkHash];
+            return $caches[$chunkHash][$mappingProtocol];
         }
 
         $property = new ReflectionProperty(ChunkCache::class, "misses");
@@ -213,9 +216,10 @@ class Player extends PMMP_PLAYER {
                     $chunkX,
                     $chunkZ,
                     $chunk,
-                    $caches[$chunkHash],
+                    $mappingProtocol,
+                    $caches[$chunkHash][$mappingProtocol],
                     $compressor,
-                    function() use ($world, $chunkCache, $chunkHash, $chunkX, $chunkZ) : void{
+                    function() use ($mappingProtocol, $world, $chunkCache, $chunkHash, $chunkX, $chunkZ) : void{
                         $world->getLogger()->error("Failed preparing chunk $chunkX $chunkZ, retrying");
 
                         $property = new ReflectionProperty(ChunkCache::class, "caches");
@@ -223,13 +227,13 @@ class Player extends PMMP_PLAYER {
                         /** @var CompressBatchPromise[] $caches */
                         $caches = $property->getValue($chunkCache);
                         if(isset($caches[$chunkHash])){
-                            $this->restartPendingRequest($chunkCache, $chunkX, $chunkZ);
+                            $this->restartPendingRequest($chunkCache, $chunkX, $chunkZ, $mappingProtocol);
                         }
                     }
                 )
             );
 
-            return $caches[$chunkHash];
+            return $caches[$chunkHash][$mappingProtocol];
         }finally{
             $world->timings->syncChunkSendPrepare->stopTiming();
         }
@@ -240,7 +244,7 @@ class Player extends PMMP_PLAYER {
      *
      * @throws \InvalidArgumentException
      */
-    private function restartPendingRequest(ChunkCache $chunkCache, int $chunkX, int $chunkZ) : void{
+    private function restartPendingRequest(ChunkCache $chunkCache, int $chunkX, int $chunkZ, int $mappingProtocol) : void{
         $chunkHash = World::chunkHash($chunkX, $chunkZ);
 
         $property = new ReflectionProperty(ChunkCache::class, "caches");
@@ -248,14 +252,14 @@ class Player extends PMMP_PLAYER {
         /** @var CompressBatchPromise[] $caches */
         $caches = $property->getValue($chunkCache);
 
-        $existing = $caches[$chunkHash] ?? null;
+        $existing = $caches[$chunkHash][$mappingProtocol] ?? null;
         if($existing === null || $existing->hasResult()){
             throw new \InvalidArgumentException("Restart can only be applied to unresolved promises");
         }
         $existing->cancel();
-        unset($caches[$chunkHash]);
+        unset($caches[$chunkHash][$mappingProtocol]);
         $property->setValue($chunkCache, $caches);
 
-        $this->request($chunkCache, $chunkX, $chunkZ)->onResolve(...$existing->getResolveCallbacks());
+        $this->request($chunkCache, $chunkX, $chunkZ, $mappingProtocol)->onResolve(...$existing->getResolveCallbacks());
     }
 }
