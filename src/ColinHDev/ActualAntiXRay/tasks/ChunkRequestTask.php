@@ -173,7 +173,7 @@ class ChunkRequestTask extends PMMPChunkRequestTask {
 
     private function isBlockReplaceable(SubChunkExplorer $explorer, Vector3 $vector, int $subChunkY) : bool {
         $chunkX = $this->chunkX;
-        $x = $vector->getX();
+        $x = $vector->x;
         assert(is_int($x));
         if ($x < 0) {
             $x = 15;
@@ -184,7 +184,7 @@ class ChunkRequestTask extends PMMPChunkRequestTask {
         }
 
         $chunkZ = $this->chunkZ;
-        $z = $vector->getZ();
+        $z = $vector->z;
         assert(is_int($z));
         if ($z < 0) {
             $z = 15;
@@ -194,7 +194,7 @@ class ChunkRequestTask extends PMMPChunkRequestTask {
             $chunkZ++;
         }
 
-        $y = $vector->getY();
+        $y = $vector->y;
         assert(is_int($y));
         if ($y < 0) {
             $y = 15;
