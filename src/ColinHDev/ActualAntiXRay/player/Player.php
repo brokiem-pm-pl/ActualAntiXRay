@@ -11,6 +11,7 @@ use pocketmine\network\mcpe\CachedChunkPromise;
 use pocketmine\network\mcpe\compression\CompressBatchPromise;
 use pocketmine\network\mcpe\compression\Compressor;
 use pocketmine\network\mcpe\convert\RuntimeBlockMapping;
+use pocketmine\network\mcpe\NetworkSession;
 use pocketmine\network\mcpe\protocol\BlockActorDataPacket;
 use pocketmine\network\mcpe\protocol\ProtocolInfo;
 use pocketmine\network\mcpe\protocol\types\BlockPosition;
@@ -116,7 +117,7 @@ class Player extends PMMP_PLAYER {
         $this->request(ChunkCache::getInstance($world, $this->getNetworkSession()->getCompressor()), $chunkX, $chunkZ, $this->getNetworkSession()->getProtocolId())->onResolve(
 
         //this callback may be called synchronously or asynchronously, depending on whether the promise is resolved yet
-            function(CompressBatchPromise $promise) use ($world, $onCompletion, $chunkX, $chunkZ) : void{
+            function(CachedChunkPromise $promise) use ($world, $onCompletion, $chunkX, $chunkZ) : void{
                 if(!$this->isConnected()){
                     return;
                 }
@@ -132,9 +133,28 @@ class Player extends PMMP_PLAYER {
                     //to NEEDED if they want to be resent.
                     return;
                 }
+
+                $compressBatchPromise = new CompressBatchPromise();
+                $result = $promise->getResult();
+
+                if($this->getNetworkSession()->isCacheEnabled()){
+                    $compressBatchPromise->resolve($result->getCacheablePacket());
+
+                    $prop = new ReflectionProperty(NetworkSession::class, "chunkCacheBlobs");
+                    $prop->setAccessible(true);
+                    $chunkCacheBlobs = $prop->getValue($this->getNetworkSession());
+
+                    if(count(array_replace($chunkCacheBlobs, $result->getHashMap())) > 4096) {
+                        $this->disconnect("Too many pending blobs");
+                        return;
+                    }
+                }else{
+                    $compressBatchPromise->resolve($result->getPacket());
+                }
+
                 $world->timings->syncChunkSend->startTiming();
                 try{
-                    $this->getNetworkSession()->queueCompressed($promise);
+                    $this->getNetworkSession()->queueCompressed($compressBatchPromise);
                     $onCompletion();
 
                     //TODO: HACK! we send the full tile data here, due to a bug in 1.19.10 which causes items in tiles
