@@ -6,16 +6,16 @@ use ColinHDev\ActualAntiXRay\utils\SubChunkExplorer;
 use pocketmine\block\VanillaBlocks;
 use pocketmine\math\Facing;
 use pocketmine\math\Vector3;
+use pocketmine\network\mcpe\CachedChunk;
 use pocketmine\network\mcpe\CachedChunkPromise;
 use pocketmine\network\mcpe\ChunkRequestTask as PMMPChunkRequestTask;
 use pocketmine\network\mcpe\compression\Compressor;
 use pocketmine\network\mcpe\convert\GlobalItemTypeDictionary;
-use pocketmine\network\mcpe\convert\RuntimeBlockMapping;
-use pocketmine\network\mcpe\protocol\LevelChunkPacket;
-use pocketmine\network\mcpe\protocol\serializer\PacketBatch;
+use pocketmine\network\mcpe\protocol\serializer\PacketSerializer;
 use pocketmine\network\mcpe\protocol\serializer\PacketSerializerContext;
 use pocketmine\network\mcpe\serializer\ChunkSerializer;
 use pocketmine\utils\AssumptionFailedError;
+use pocketmine\utils\Binary;
 use pocketmine\world\ChunkLoader;
 use pocketmine\world\format\Chunk;
 use pocketmine\world\format\io\FastChunkSerializer;
@@ -165,10 +165,29 @@ class ChunkRequestTask extends PMMPChunkRequestTask {
 
         $chunk = $manager->getChunk($this->chunkX, $this->chunkZ);
         assert($chunk instanceof Chunk);
-        $subCount = ChunkSerializer::getSubChunkCount($chunk) + ChunkSerializer::LOWER_PADDING_SIZE;
         $encoderContext = new PacketSerializerContext(GlobalItemTypeDictionary::getInstance()->getDictionary(GlobalItemTypeDictionary::getDictionaryProtocol($this->mappingProtocol)));
-        $payload = ChunkSerializer::serializeFullChunk($chunk, RuntimeBlockMapping::getInstance(), $encoderContext, $this->mappingProtocol, $this->tiles);
-        $this->setResult($this->compressor->compress(PacketBatch::fromPackets($this->mappingProtocol, $encoderContext, LevelChunkPacket::create($this->chunkX, $this->chunkZ, $subCount, false, null, $payload))->getBuffer()));
+        $encoder = PacketSerializer::encoder($encoderContext);
+        $encoder->setProtocolId($this->mappingProtocol);
+
+        $cache = new CachedChunk();
+
+        $biomeEncoder = clone $encoder;
+        ChunkSerializer::serializeBiomes($chunk, $biomeEncoder);
+        $cache->setBiomes(Binary::readLong(xxhash64($chunkBuffer = $biomeEncoder->getBuffer())), $chunkBuffer);
+
+        $chunkDataEncoder = clone $encoder;
+        ChunkSerializer::serializeChunkData($chunk, $chunkDataEncoder, $this->tiles);
+
+        $cache->compressPackets(
+            $this->chunkX,
+            $this->chunkZ,
+            $chunkDataEncoder->getBuffer(),
+            $this->compressor,
+            $encoderContext,
+            $this->mappingProtocol
+        );
+
+        $this->setResult($cache);
     }
 
     private function isBlockReplaceable(SubChunkExplorer $explorer, Vector3 $vector, int $subChunkY) : bool {
