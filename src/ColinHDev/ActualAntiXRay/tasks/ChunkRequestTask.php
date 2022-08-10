@@ -11,6 +11,7 @@ use pocketmine\network\mcpe\CachedChunkPromise;
 use pocketmine\network\mcpe\ChunkRequestTask as PMMPChunkRequestTask;
 use pocketmine\network\mcpe\compression\Compressor;
 use pocketmine\network\mcpe\convert\GlobalItemTypeDictionary;
+use pocketmine\network\mcpe\convert\RuntimeBlockMapping;
 use pocketmine\network\mcpe\protocol\serializer\PacketSerializer;
 use pocketmine\network\mcpe\protocol\serializer\PacketSerializerContext;
 use pocketmine\network\mcpe\serializer\ChunkSerializer;
@@ -170,6 +171,10 @@ class ChunkRequestTask extends PMMPChunkRequestTask {
         $encoder->setProtocolId($this->mappingProtocol);
 
         $cache = new CachedChunk();
+
+        foreach(ChunkSerializer::serializeSubChunks($chunk, RuntimeBlockMapping::getInstance(), $encoderContext, $this->mappingProtocol) as $subChunk){
+            $cache->addSubChunk(Binary::readLong(xxhash64($subChunk)), $subChunk);
+        }
 
         $biomeEncoder = clone $encoder;
         ChunkSerializer::serializeBiomes($chunk, $biomeEncoder);
