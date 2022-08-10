@@ -179,7 +179,7 @@ class Player extends PMMP_PLAYER {
 
         $cacheProperty = new ReflectionProperty(ChunkCache::class, "caches");
         $cacheProperty->setAccessible(true);
-        /** @var CompressBatchPromise[] $caches */
+        /** @var CachedChunkPromise[] $caches */
         $caches = $cacheProperty->getValue($chunkCache);
 
         $mappingProtocol = RuntimeBlockMapping::getMappingProtocol($protocolId);
@@ -202,7 +202,7 @@ class Player extends PMMP_PLAYER {
 
         $world->timings->syncChunkSendPrepare->startTiming();
         try{
-            $caches[$chunkHash] = new CompressBatchPromise();
+            $caches[$chunkHash][$mappingProtocol] = new CachedChunkPromise();
             $cacheProperty->setValue($chunkCache, $caches);
 
             $property = new ReflectionProperty(ChunkCache::class, "compressor");
@@ -224,7 +224,7 @@ class Player extends PMMP_PLAYER {
 
                         $property = new ReflectionProperty(ChunkCache::class, "caches");
                         $property->setAccessible(true);
-                        /** @var CompressBatchPromise[] $caches */
+                        /** @var CachedChunkPromise[] $caches */
                         $caches = $property->getValue($chunkCache);
                         if(isset($caches[$chunkHash])){
                             $this->restartPendingRequest($chunkCache, $chunkX, $chunkZ, $mappingProtocol);
@@ -249,7 +249,7 @@ class Player extends PMMP_PLAYER {
 
         $property = new ReflectionProperty(ChunkCache::class, "caches");
         $property->setAccessible(true);
-        /** @var CompressBatchPromise[] $caches */
+        /** @var CachedChunkPromise[] $caches */
         $caches = $property->getValue($chunkCache);
 
         $existing = $caches[$chunkHash][$mappingProtocol] ?? null;
