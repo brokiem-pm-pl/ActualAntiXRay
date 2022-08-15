@@ -26,6 +26,7 @@ use pocketmine\world\World;
 use function assert;
 use function is_array;
 use function is_int;
+use function mt_rand;
 
 class ChunkRequestTask extends PMMPChunkRequestTask {
 
@@ -46,6 +47,13 @@ class ChunkRequestTask extends PMMPChunkRequestTask {
         parent::__construct($chunkX, $chunkZ, $chunk, $mappingProtocol, $promise, $compressor, $onError);
         if (empty(self::$replaceableBlocks)) {
             self::$replaceableBlocks = [
+                VanillaBlocks::STONE()->getFullId(),
+                VanillaBlocks::GRAVEL()->getFullId(),
+                VanillaBlocks::GRAVEL()->getFullId()
+            ];
+        }
+        if (empty(self::$replacingBlocks)) {
+            self::$replacingBlocks = [
                 VanillaBlocks::COAL_ORE()->getFullId(),
                 VanillaBlocks::IRON_ORE()->getFullId(),
                 VanillaBlocks::LAPIS_LAZULI_ORE()->getFullId(),
@@ -53,12 +61,6 @@ class ChunkRequestTask extends PMMPChunkRequestTask {
                 VanillaBlocks::GOLD_ORE()->getFullId(),
                 VanillaBlocks::DIAMOND_ORE()->getFullId(),
                 VanillaBlocks::EMERALD_ORE()->getFullId()
-            ];
-        }
-        if (empty(self::$replacingBlocks)) {
-            self::$replacingBlocks = [
-                VanillaBlocks::STONE()->getFullId(),
-                VanillaBlocks::GRAVEL()->getFullId()
             ];
         }
 
@@ -137,9 +139,9 @@ class ChunkRequestTask extends PMMPChunkRequestTask {
 
                         // We could use the random_int() function instead but since mt_rand() is faster than random_int(),
                         // we use that as it is not important if our the returned values are cryptographically secure.
-                        //if (mt_rand(1, 100) > 75) {
-                        //    continue;
-                        //}
+                        if (mt_rand(1, 100) > 75) {
+                            continue;
+                        }
 
                         foreach (Facing::ALL as $facing) {
                             $blockSide = $vector->getSide($facing);
