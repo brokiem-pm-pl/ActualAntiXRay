@@ -49,19 +49,20 @@ class DataPacketSendListener implements Listener {
                 // If the send block does not match the existing block at that position, then someone uses this packet
                 // to send fake blocks to the client, for example through the InvMenu virion.
                 // Since we don't want to undermine his efforts, we will ignore this and don't send any block updates.
-                if ($blockMapping->toRuntimeId($world->getBlockAt($x, $y, $z)->getFullId()) !== $packet->blockRuntimeId) {
-                    continue;
-                }
-                $worldName = $world->getFolderName();
-                if (!isset($positionsToUpdatePerWorld[$worldName])) {
-                    $positionsToUpdatePerWorld[$worldName] = [];
-                }
-                $positionsToUpdatePerWorld[$worldName][World::blockHash($x, $y, $z)] = null;
-                foreach((new Vector3($x, $y, $z))->sides() as $point) {
-                    foreach(array_merge([$point], $point->sidesArray()) as $point2) {
-                        $hash = World::blockHash($point2->getFloorX(), $point2->getFloorY(), $point2->getFloorZ());
-                        if (!array_key_exists($hash, $positionsToUpdatePerWorld[$worldName])) {
-                            $positionsToUpdatePerWorld[$worldName][$hash] = $point2;
+                foreach ($applyableTargets as $networkSession) {
+                    if ($blockMapping->toRuntimeId($world->getBlockAt($x, $y, $z)->getFullId(), RuntimeBlockMapping::getMappingProtocol($networkSession->getProtocolId())) === $packet->blockRuntimeId) {
+                        $worldName = $world->getFolderName();
+                        if (!isset($positionsToUpdatePerWorld[$worldName])) {
+                            $positionsToUpdatePerWorld[$worldName] = [];
+                        }
+                        $positionsToUpdatePerWorld[$worldName][World::blockHash($x, $y, $z)] = null;
+                        foreach((new Vector3($x, $y, $z))->sides() as $point) {
+                            foreach(array_merge([$point], $point->sidesArray()) as $point2) {
+                                $hash = World::blockHash($point2->getFloorX(), $point2->getFloorY(), $point2->getFloorZ());
+                                if (!array_key_exists($hash, $positionsToUpdatePerWorld[$worldName])) {
+                                    $positionsToUpdatePerWorld[$worldName][$hash] = $point2;
+                                }
+                            }
                         }
                     }
                 }
